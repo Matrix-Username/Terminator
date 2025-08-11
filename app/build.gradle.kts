@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.skiy.terminator"
+    namespace = "com.skiy.terminator.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.skiy.terminator"
+        applicationId = "com.skiy.terminator.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

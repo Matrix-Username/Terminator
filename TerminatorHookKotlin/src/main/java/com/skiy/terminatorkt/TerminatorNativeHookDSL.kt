@@ -18,6 +18,8 @@ package com.skiy.terminatorkt
 import android.util.Log
 import com.skiy.terminator.hooks.cnative.TerminatorNativeHook
 import com.skiy.terminatorkt.utils.addressByTarget
+import com.skiy.terminatorkt.utils.convertKotlinToNative
+import com.skiy.terminatorkt.utils.convertNativeToKotlin
 import com.v7878.foreign.Arena
 import com.v7878.foreign.FunctionDescriptor
 import java.lang.invoke.MethodHandle
@@ -56,12 +58,27 @@ class HookContext(
         }
 
     /**
-     * Gets a function argument by its index and casts it to the specified type.
-     * @param index The index of the argument. For C++ instance methods, remember that 'this' is at index 0.
-     * @return The argument cast to type [T].
+     * Gets a function argument by its index without any type conversion.
+     * @param index The index of the argument.
+     * @return The raw argument (e.g., a Pointer, Int, Long) cast to type [T].
      */
     @Suppress("UNCHECKED_CAST")
-    fun <T> arg(index: Int): T = args[index] as T
+    fun <T> rawArg(index: Int): T = args[index] as T
+
+    /**
+     * Gets a function argument by its index, automatically converting it from its
+     * native representation to the specified Kotlin type [T].
+     * @param index The index of the argument.
+     * @return The argument converted to type [T].
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun <T> arg(index: Int): T {
+        val nativeArg = args[index]
+        val expectedType = paramTypes.getOrNull(index)
+            ?: throw IndexOutOfBoundsException("Cannot get argument $index: parameter type not defined in params().")
+
+        return convertNativeToKotlin(nativeArg, expectedType) as T
+    }
 
     /**
      * Invokes the original (unhooked) function with the original arguments.

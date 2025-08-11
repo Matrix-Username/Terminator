@@ -1,4 +1,5 @@
 import android.util.Log
+import com.skiy.terminator.hooks.jvm.ti.JVMTI
 import com.skiy.terminatorkt.CString
 import com.skiy.terminatorkt.Pointer
 import com.skiy.terminatorkt.TerminatorNative
@@ -11,7 +12,10 @@ import com.skiy.terminatorkt.toNative
 import com.skiy.terminatorkt.toPointer
 import com.skiy.terminatorkt.utils.addressByTarget
 import com.skiy.terminatorkt.utils.asCallable
+import com.skiy.terminatorkt.withTempArena
 import com.v7878.foreign.Arena
+import com.v7878.foreign.MemorySegment
+import com.v7878.foreign.SymbolLookup
 import java.util.concurrent.ConcurrentHashMap
 
 
@@ -29,6 +33,8 @@ class TestData(pointer: Pointer) : Struct(pointer) {
     override fun toString(): String = "TestData(id=$id, value=$value) at 0x${pointer.address().toString(16)}"
 }
 
+
+
 object TestRunner {
 
     private const val TAG = "NativeHookTester"
@@ -37,6 +43,9 @@ object TestRunner {
 
     fun installHooks() {
         Log.i(TAG, "--- Installing All Hooks ---")
+
+
+        // Вне хука, просто в тесте
 
         TerminatorNative.hook {
             target(LIB_NAME, "test_simple_function")
@@ -60,17 +69,16 @@ object TestRunner {
             returns<CString>() // const char*
             params(CString::class, Pointer::class)
             onCalled {
-                val strPtr = arg<Pointer>(0)
+                val strPtr = arg<CString>(0)
                 val testName = "Pointer Args Hook"
 
-                val inputString = strPtr.readCString()
                 Log.d(TAG, "[Hook] Intercepted test_pointer_args(${dumpArgsSmart().joinToString(", ")})")
 
-                val receivedCorrectly = (inputString == "Hello from C++")
+                val receivedCorrectly = (strPtr == "Hello from C++")
 
                 testResults[testName] = receivedCorrectly
 
-                return@onCalled arena.allocateFrom("Hooked response string")
+                return@onCalled toNative("Hooked response string")
             }
         }
 
@@ -108,7 +116,7 @@ object TestRunner {
         ).toPointer()
             .asCallable<(CString, Pointer) -> CString>()
 
-        val result = method("Hello", 32.toNative(Arena.ofConfined())) as CString
+        val result = method("Hello", 32) as CString
 
         Log.i(TAG, "Method calling test: $result")
 

@@ -18,6 +18,8 @@ package com.skiy.terminatorkt
 import com.skiy.terminator.hooks.cnative.DlPhdrResolver
 import com.skiy.terminatorkt.memory.Struct
 import com.skiy.terminatorkt.memory.StructCompanion
+import com.skiy.terminatorkt.utils.convertKotlinToNative
+import com.skiy.terminatorkt.utils.convertNativeToKotlin
 import com.v7878.foreign.Arena
 import com.v7878.foreign.MemorySegment
 import com.v7878.foreign.ValueLayout
@@ -235,21 +237,13 @@ inline fun <R> withTempArena(block: (arena: Arena) -> R): R {
 }
 
 /**
- * A convenience extension to allocate a primitive value in an arena and get a pointer to it.
+ * Converts a raw native value (like a [Pointer] or [Int]) to a high-level, safe Kotlin type.
+ *
+ * @return The converted Kotlin object of type [T], or `null` if the conversion is not possible or the input is null.
  */
-inline fun <reified T : Any> T.toNative(arena: Arena): Pointer {
-    val layout = kClassToValueLayout(T::class)
-    val pointer = arena.allocate(layout)
-    when (this) {
-        is Int -> pointer.writeInt(0, this)
-        is Long -> pointer.writeLong(0, this)
-        is Float -> pointer.writeFloat(0, this)
-        is Double -> pointer.writeDouble(0, this)
-        is Byte -> pointer.writeByte(0, this)
-        is Short -> pointer.writeShort(0, this)
-        else -> throw IllegalArgumentException("Unsupported type for toNative: ${T::class}")
-    }
-    return pointer
+inline fun <reified T : Any> Any?.toKotlin(): T? {
+    if (this == null) return null
+    return convertNativeToKotlin(this, T::class) as? T
 }
 
 /**
@@ -342,3 +336,32 @@ fun Struct.dump(): String {
     sb.append("-----------------------------------------")
     return sb.toString()
 }
+
+/**
+ * Converts a Kotlin object to its raw native representation by allocating memory in the provided arena.
+ *
+ * This is the primary, general-purpose way to convert Kotlin types into values that can be passed
+ * to native functions.
+ *
+ * @param arena The memory arena to use for any necessary allocations (e.g., for strings, arrays).
+ * @return The raw native value (e.g., a [Pointer], [Int], or [Long]).
+ */
+fun Any?.toNative(arena: Arena): Any? {
+    return convertKotlinToNative(this, arena)
+}
+
+/**
+ * Converts a Kotlin object to its raw native representation within a `HookContext`.
+ *
+ * This is a convenience shortcut that automatically uses the context's temporary memory `arena`.
+ *
+ * ### Example (inside a HookContext):
+ * ```kotlin
+ * onCalled {
+ *     // ...
+ *     val nativeValue = toNative("some string") // `arena` is used automatically
+ *     callOriginal(arg(0), nativeValue)
+ * }
+ * ```
+ */
+fun HookContext.toNative(value: Any?): Any? = value.toNative(this.arena)

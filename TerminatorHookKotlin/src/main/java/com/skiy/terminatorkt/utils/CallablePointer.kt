@@ -88,52 +88,11 @@ class CallablePointer(
     operator fun invoke(vararg args: Any?): Any? {
         try {
             return withTempArena { arena ->
-                val nativeArgs = args.map { arg ->
-                    when (arg) {
-                        // Special containers
-                        is Out<*> -> arg.allocate(arena)
-
-                        // Framework types
-                        is Struct -> arg.pointer
-                        is NativeEnum -> arg.value
-
-                        // Standard library types that need conversion
-                        is String -> arg.toCString(arena)
-
-                        //Arrays
-                        is IntArray -> arena.allocateFrom(ValueLayout.JAVA_INT, *arg)
-                        is LongArray -> arena.allocateFrom(ValueLayout.JAVA_LONG, *arg)
-                        is ByteArray -> arena.allocateFrom(ValueLayout.JAVA_BYTE, *arg)
-                        is FloatArray -> arena.allocateFrom(ValueLayout.JAVA_FLOAT, *arg)
-                        is DoubleArray -> arena.allocateFrom(ValueLayout.JAVA_DOUBLE, *arg)
-                        is ShortArray -> arena.allocateFrom(ValueLayout.JAVA_SHORT, *arg)
-                        is CharArray -> arena.allocateFrom(ValueLayout.JAVA_CHAR, *arg)
-
-                        // Primitives and other pointers are passed as-is
-                        else -> arg
-                    }
-                }.toTypedArray()
+                val nativeArgs = args.map { convertKotlinToNative(it, arena) }.toTypedArray()
 
                 val result = handle.invokeWithArguments(*nativeArgs)
 
-                if (result is Pointer && !result.isNull) {
-                    if (returnKClass == CString::class) {
-                        return@withTempArena result.readCString()
-                    }
-
-                    if (Struct::class.java.isAssignableFrom(returnKClass.java)) {
-                        val companion = returnKClass.java.getField("Companion").get(null) as StructCompanion<*>
-                        return@withTempArena companion.of(result)
-                    }
-                }
-
-                if (result is Number && NativeEnum::class.java.isAssignableFrom(returnKClass.java)) {
-                    val companion = returnKClass.java.getField("Companion").get(null) as NativeEnum.Companion<*>
-                    return@withTempArena companion.fromValue(result.toInt())
-                        ?: throw IllegalArgumentException("Native function returned invalid enum value: ${result.toInt()} for ${returnKClass.simpleName}")
-                }
-
-                return@withTempArena result
+                return@withTempArena convertNativeToKotlin(result, returnKClass)
             }
         } catch (t: Throwable) {
             val formattedArgs = args.mapIndexed { i, arg ->

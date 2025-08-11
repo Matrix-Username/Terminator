@@ -814,6 +814,57 @@ public final class JVMTI {
         }
     }
 
+    public static Optional<Class<?>> findClassByName(String className) throws JVMTIException {
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment class_count_ptr = arena.allocate(JAVA_INT);
+            MemorySegment classes_ptr_ptr = arena.allocate(ADDRESS);
+
+            checkError(Native.INSTANCE.GetLoadedClasses(
+                    JVMTI_ENV,
+                    class_count_ptr.nativeAddress(),
+                    classes_ptr_ptr.nativeAddress()
+            ));
+
+            int count = class_count_ptr.get(JAVA_INT, 0);
+            if (count <= 0) {
+                return Optional.empty();
+            }
+            long classes_address = classes_ptr_ptr.get(ADDRESS, 0).nativeAddress();
+            if (classes_address == 0) {
+                throw new IllegalStateException("GetLoadedClasses returned non-zero count but a null pointer.");
+            }
+
+            try {
+                JNIUtils.PushLocalFrame(count);
+                try {
+                    for (int i = 0; i < count; i++) {
+                        try {
+                            long class_ref = getWordN(classes_address + (long) i * WORD.byteSize());
+                            if (class_ref == 0) continue;
+
+                            Object obj = JNIUtils.refToObject(class_ref);
+                            if (obj == null) continue;
+
+                            if (obj instanceof Class) {
+                                Class<?> clazz = (Class<?>) obj;
+                                if (className.equals(clazz.getName())) {
+                                    return Optional.of(clazz);
+                                }
+                            }
+                        } catch (Throwable t) {
+
+                        }
+                    }
+                } finally {
+                    JNIUtils.PopLocalFrame();
+                }
+                return Optional.empty();
+            } finally {
+                Deallocate(classes_address);
+            }
+        }
+    }
+
     public static String GetErrorName(int error) {
         return switch (error) {
             case JVMTI_ERROR_NONE -> "NONE";
